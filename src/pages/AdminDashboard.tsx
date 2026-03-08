@@ -5,40 +5,74 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Bell, Send, Users, History, LogOut, Loader2 } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Bell, Send, Users, History, LogOut, Loader2, Settings, User, UserPlus, Key } from 'lucide-react';
 import { toast } from 'sonner';
+import AdminAuth from '@/components/AdminAuth';
+import type { Session } from '@supabase/supabase-js';
 
 const AdminDashboard = () => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [adminPassword, setAdminPassword] = useState('');
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [username, setUsername] = useState('');
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
   const [deviceCount, setDeviceCount] = useState(0);
   const [notifications, setNotifications] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  // Account management state
+  const [newUsername, setNewUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+
+  // Create account state
+  const [createEmail, setCreateEmail] = useState('');
+  const [createPassword, setCreatePassword] = useState('');
+  const [createUsername, setCreateUsername] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
 
   useEffect(() => {
-    const stored = sessionStorage.getItem('admin_authenticated');
-    if (stored === 'true') {
-      setIsAuthenticated(true);
-    }
-    setLoading(false);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setLoading(false);
+    });
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!session) return;
     fetchData();
-  }, [isAuthenticated]);
+    fetchProfile();
+  }, [session]);
+
+  const fetchProfile = async () => {
+    if (!session) return;
+    const { data } = await supabase
+      .from('admin_profiles')
+      .select('username')
+      .eq('user_id', session.user.id)
+      .single();
+    if (data) {
+      setUsername(data.username);
+      setNewUsername(data.username);
+    }
+  };
 
   const fetchData = async () => {
-    // Get device count
     const { count } = await supabase
       .from('device_tokens')
       .select('*', { count: 'exact', head: true });
     setDeviceCount(count || 0);
 
-    // Get recent notifications
     const { data } = await supabase
       .from('notifications')
       .select('*')
@@ -47,21 +81,61 @@ const AdminDashboard = () => {
     setNotifications(data || []);
   };
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleUpdateUsername = async () => {
+    if (!newUsername.trim() || !session) return;
+    setSavingProfile(true);
+    const { error } = await supabase
+      .from('admin_profiles')
+      .update({ username: newUsername.trim() })
+      .eq('user_id', session.user.id);
+    if (error) {
+      toast.error('Failed to update username');
+    } else {
+      setUsername(newUsername.trim());
+      toast.success('Username updated');
+    }
+    setSavingProfile(false);
+  };
+
+  const handleChangePassword = async () => {
+    if (newPassword.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
+    }
+    setChangingPassword(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success('Password updated successfully');
+      setNewPassword('');
+    }
+    setChangingPassword(false);
+  };
+
+  const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Simple password check via edge function
-    const response = await supabase.functions.invoke('admin-auth', {
-      body: { password: adminPassword },
+    if (!createEmail || !createPassword || !createUsername.trim()) {
+      toast.error('Please fill in all fields');
+      return;
+    }
+    setCreating(true);
+
+    // Use edge function to create account (so current session isn't affected)
+    const response = await supabase.functions.invoke('create-admin', {
+      body: { email: createEmail, password: createPassword, username: createUsername.trim() },
     });
 
-    if (response.data?.authenticated) {
-      setIsAuthenticated(true);
-      sessionStorage.setItem('admin_authenticated', 'true');
-      toast.success('Logged in successfully');
+    if (response.error || response.data?.error) {
+      toast.error(response.data?.error || response.error?.message || 'Failed to create account');
     } else {
-      toast.error('Invalid password');
+      toast.success(`Account created for ${createEmail}`);
+      setCreateEmail('');
+      setCreatePassword('');
+      setCreateUsername('');
+      setShowCreateDialog(false);
     }
-    setAdminPassword('');
+    setCreating(false);
   };
 
   const handleSendNotification = async (e: React.FormEvent) => {
@@ -70,29 +144,26 @@ const AdminDashboard = () => {
       toast.error('Please fill in both title and message');
       return;
     }
-
     setSending(true);
     try {
       const response = await supabase.functions.invoke('send-notification', {
         body: { title, body },
       });
-
       if (response.error) throw response.error;
-
       toast.success(`Notification sent to ${response.data?.sent_count || 0} devices`);
       setTitle('');
       setBody('');
       fetchData();
     } catch (err: any) {
-      toast.error('Failed to send notification: ' + (err.message || 'Unknown error'));
+      toast.error('Failed to send: ' + (err.message || 'Unknown error'));
     } finally {
       setSending(false);
     }
   };
 
-  const handleLogout = () => {
-    sessionStorage.removeItem('admin_authenticated');
-    setIsAuthenticated(false);
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setSession(null);
   };
 
   if (loading) {
@@ -103,34 +174,8 @@ const AdminDashboard = () => {
     );
   }
 
-  if (!isAuthenticated) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary">
-              <Bell className="h-8 w-8 text-primary-foreground" />
-            </div>
-            <CardTitle className="text-2xl font-bold">KeyDirect Admin</CardTitle>
-            <CardDescription>Enter your admin password to manage push notifications</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleLogin} className="space-y-4">
-              <Input
-                type="password"
-                placeholder="Admin password"
-                value={adminPassword}
-                onChange={(e) => setAdminPassword(e.target.value)}
-                className="h-12"
-              />
-              <Button type="submit" className="w-full h-12 text-base font-semibold">
-                Sign In
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
-    );
+  if (!session) {
+    return <AdminAuth onAuthenticated={() => {}} />;
   }
 
   return (
@@ -144,13 +189,56 @@ const AdminDashboard = () => {
             </div>
             <div>
               <h1 className="text-lg font-bold">KeyDirect Notifications</h1>
-              <p className="text-sm text-muted-foreground">Admin Dashboard</p>
+              <p className="text-sm text-muted-foreground">Welcome, {username}</p>
             </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={handleLogout}>
-            <LogOut className="mr-2 h-4 w-4" />
-            Logout
-          </Button>
+          <div className="flex items-center gap-2">
+            <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Create Account
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create Admin Account</DialogTitle>
+                  <DialogDescription>Create a new admin account for your team</DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleCreateAccount} className="space-y-4">
+                  <Input
+                    placeholder="Username"
+                    value={createUsername}
+                    onChange={(e) => setCreateUsername(e.target.value)}
+                    required
+                  />
+                  <Input
+                    type="email"
+                    placeholder="Email address"
+                    value={createEmail}
+                    onChange={(e) => setCreateEmail(e.target.value)}
+                    required
+                  />
+                  <Input
+                    type="password"
+                    placeholder="Password (min 6 characters)"
+                    value={createPassword}
+                    onChange={(e) => setCreatePassword(e.target.value)}
+                    minLength={6}
+                    required
+                  />
+                  <Button type="submit" disabled={creating} className="w-full">
+                    {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
+                    Create Account
+                  </Button>
+                </form>
+              </DialogContent>
+            </Dialog>
+            <Button variant="ghost" size="sm" onClick={handleLogout}>
+              <LogOut className="mr-2 h-4 w-4" />
+              Logout
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -229,6 +317,66 @@ const AdminDashboard = () => {
           </CardContent>
         </Card>
 
+        {/* Account Settings */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Settings className="h-5 w-5" />
+              Account Settings
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Username */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-2">
+                <User className="h-4 w-4" /> Username
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  value={newUsername}
+                  onChange={(e) => setNewUsername(e.target.value)}
+                  className="h-10"
+                />
+                <Button
+                  onClick={handleUpdateUsername}
+                  disabled={savingProfile || newUsername === username}
+                  variant="secondary"
+                >
+                  {savingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
+                </Button>
+              </div>
+            </div>
+
+            {/* Change Password */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-2">
+                <Key className="h-4 w-4" /> Change Password
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  type="password"
+                  placeholder="New password (min 6 characters)"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="h-10"
+                  minLength={6}
+                />
+                <Button
+                  onClick={handleChangePassword}
+                  disabled={changingPassword || newPassword.length < 6}
+                  variant="secondary"
+                >
+                  {changingPassword ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Update'}
+                </Button>
+              </div>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              Signed in as {session.user.email}
+            </p>
+          </CardContent>
+        </Card>
+
         {/* History */}
         <Card>
           <CardHeader>
@@ -239,16 +387,11 @@ const AdminDashboard = () => {
           </CardHeader>
           <CardContent>
             {notifications.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">
-                No notifications sent yet
-              </p>
+              <p className="text-center text-muted-foreground py-8">No notifications sent yet</p>
             ) : (
               <div className="space-y-3">
                 {notifications.map((n) => (
-                  <div
-                    key={n.id}
-                    className="flex items-start justify-between rounded-lg border p-4"
-                  >
+                  <div key={n.id} className="flex items-start justify-between rounded-lg border p-4">
                     <div className="space-y-1">
                       <p className="font-semibold">{n.title}</p>
                       <p className="text-sm text-muted-foreground">{n.body}</p>
@@ -256,9 +399,7 @@ const AdminDashboard = () => {
                         {new Date(n.sent_at).toLocaleString()}
                       </p>
                     </div>
-                    <Badge variant="secondary">
-                      {n.sent_count} sent
-                    </Badge>
+                    <Badge variant="secondary">{n.sent_count} sent</Badge>
                   </div>
                 ))}
               </div>
