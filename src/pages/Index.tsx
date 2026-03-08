@@ -5,43 +5,46 @@ import { initPushNotifications } from '@/lib/push-notifications';
 const KEYDIRECT_URL = 'https://keydirect.ca';
 
 const Index = () => {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-
   useEffect(() => {
-    // Initialize push notifications on native platforms
     if (Capacitor.isNativePlatform()) {
       initPushNotifications();
     }
   }, []);
 
   // On native, the Capacitor server config loads keydirect.ca directly
-  // On web preview, we show a preview message with iframe
   if (Capacitor.isNativePlatform()) {
-    // On native, this won't actually render since the server URL points to keydirect.ca
     return null;
   }
 
+  // On web, show a simple landing with link to the site and admin
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      {/* Banner for web preview */}
-      <div className="bg-primary px-4 py-3 text-center">
-        <p className="text-sm font-medium text-primary-foreground">
-          📱 KeyDirect Mobile App Preview — 
-          <a href="/admin" className="underline font-bold ml-1">
-            Go to Admin Dashboard →
-          </a>
-        </p>
-      </div>
-
-      {/* WebView preview */}
-      <iframe
-        ref={iframeRef}
-        src={KEYDIRECT_URL}
-        className="flex-1 w-full border-none"
-        style={{ minHeight: 'calc(100vh - 48px)' }}
-        title="KeyDirect.ca"
-        allow="payment; geolocation"
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 text-center">
+      <img
+        src="/keydirect-logo-full.jpg"
+        alt="KeyDirect Logo"
+        className="h-20 w-auto mb-8 rounded-lg"
       />
+      <h1 className="text-2xl font-bold text-foreground mb-2">KeyDirect Mobile App</h1>
+      <p className="text-muted-foreground mb-8 max-w-sm">
+        This is the companion app for KeyDirect.ca. Download the mobile app to get the full experience with push notifications.
+      </p>
+
+      <div className="flex flex-col gap-3 w-full max-w-xs">
+        <a
+          href={KEYDIRECT_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center justify-center rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground shadow hover:opacity-90 transition"
+        >
+          Visit KeyDirect.ca →
+        </a>
+        <a
+          href="/admin"
+          className="inline-flex items-center justify-center rounded-lg border border-border px-6 py-3 text-sm font-medium text-foreground hover:bg-muted transition"
+        >
+          Admin Dashboard
+        </a>
+      </div>
     </div>
   );
 };
