@@ -14,7 +14,84 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      admin_users: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          password_hash: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          password_hash: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          password_hash?: string
+        }
+        Relationships: []
+      }
+      device_tokens: {
+        Row: {
+          created_at: string
+          device_info: Json | null
+          id: string
+          platform: string
+          token: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          device_info?: Json | null
+          id?: string
+          platform: string
+          token: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          device_info?: Json | null
+          id?: string
+          platform?: string
+          token?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      notifications: {
+        Row: {
+          body: string
+          data: Json | null
+          id: string
+          sent_at: string
+          sent_count: number | null
+          status: string
+          title: string
+        }
+        Insert: {
+          body: string
+          data?: Json | null
+          id?: string
+          sent_at?: string
+          sent_count?: number | null
+          status?: string
+          title: string
+        }
+        Update: {
+          body?: string
+          data?: Json | null
+          id?: string
+          sent_at?: string
+          sent_count?: number | null
+          status?: string
+          title?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
