@@ -101,4 +101,7 @@
   .stat-card {
     @apply bg-card rounded-xl border p-6 shadow-sm transition-shadow hover:shadow-md;
   }
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
 }
