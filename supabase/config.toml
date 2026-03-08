@@ -1,1 +1,7 @@
 project_id = "jlerdgzzcmlobgftjkbt"
+
+[functions.admin-auth]
+verify_jwt = false
+
+[functions.send-notification]
+verify_jwt = false
